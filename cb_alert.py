@@ -20,7 +20,7 @@ PUSHPLUS_URL = "https://www.pushplus.plus/send"
 # ================================
 
 
-def get_cb_issues():
+def get_cb_issues(today_str):
     """
     获取近期可转债申购数据
     数据来源：巨潮资讯（通过 AKShare），权威可靠
@@ -31,7 +31,7 @@ def get_cb_issues():
     except ImportError:
         raise ImportError("akshare 未安装，请执行: pip install akshare")
 
-    today = datetime.now()
+    today = datetime.strptime(today_str, "%Y-%m-%d")
     start_date = (today - timedelta(days=30)).strftime("%Y%m%d")
     end_date = (today + timedelta(days=14)).strftime("%Y%m%d")
 
@@ -43,12 +43,10 @@ def get_cb_issues():
     if df is None or df.empty:
         return []
 
-    today_str = today.strftime("%Y-%m-%d")
-
     issues = []
     for _, row in df.iterrows():
         onl_date = str(row.get("网上申购日期", "")).strip()
-        if not onl_date or onl_date == "nan" or onl_date == "None":
+        if not onl_date or onl_date in ("nan", "None"):
             continue
 
         # 统一日期格式为 YYYY-MM-DD
@@ -84,9 +82,18 @@ def format_size(size_in_wan):
         return "未知"
 
 
-def build_message(today_issues):
-    """构建 HTML 格式推送消息（仅包含当天可申购的转债）"""
+def format_price(price):
+    """格式化发行价格"""
+    if price is None or str(price) == "nan":
+        price = 100
+    return f"{float(price):.0f}元"
+
+
+def build_message(today_issues, upcoming_issues):
+    """构建 HTML 格式推送消息（当天可申购 + 未来几天预告）"""
     html = []
+
+    # ---- 今日申购 ----
     html.append('<h2 style="color:#e74c3c;">🔔 今天可申购！</h2>')
     html.append('<table style="width:100%;border-collapse:collapse;font-size:14px;">')
     html.append('<tr style="background:#f8d7da;"><th style="padding:8px;">转债名称</th><th style="padding:8px;">申购代码</th><th style="padding:8px;">发行规模</th><th style="padding:8px;">发行价</th></tr>')
@@ -96,19 +103,56 @@ def build_message(today_issues):
         html.append(f'<td style="text-align:center;padding:6px;font-weight:bold;">{item["onl_name"]}</td>')
         html.append(f'<td style="text-align:center;padding:6px;">{item["onl_code"]}</td>')
         html.append(f'<td style="text-align:center;padding:6px;">{format_size(item["issue_size"])}</td>')
-        price = item.get("issue_price", 100)
-        if price is None or str(price) == "nan":
-            price = 100
-        html.append(f'<td style="text-align:center;padding:6px;">{float(price):.0f}元</td>')
+        html.append(f'<td style="text-align:center;padding:6px;">{format_price(item["issue_price"])}</td>')
         html.append("</tr>")
     html.append("</table>")
     html.append('<p style="color:#e74c3c;font-size:13px;font-weight:bold;">⏰ 记得在交易时间（9:30-15:00）内顶格申购！</p>')
-    html.append('<p style="color:#666;font-size:12px;">💡 可转债申购无需市值，顶格申购中签概率最大，中签后缴款即可。</p>')
 
+    # ---- 未来预告 ----
+    if upcoming_issues:
+        html.append('<hr style="border:none;border-top:1px solid #eee;margin:15px 0;">')
+        html.append('<h3 style="color:#2980b9;">📅 近期预告</h3>')
+        html.append('<table style="width:100%;border-collapse:collapse;font-size:13px;">')
+        html.append('<tr style="background:#d6eaf8;"><th style="padding:6px;">日期</th><th style="padding:6px;">转债名称</th><th style="padding:6px;">申购代码</th><th style="padding:6px;">发行规模</th></tr>')
+        for i, item in enumerate(upcoming_issues):
+            bg = "#ebf5fb" if i % 2 == 0 else "#ffffff"
+            html.append(f'<tr style="background:{bg};">')
+            html.append(f'<td style="text-align:center;padding:5px;">{item["onl_date"]}</td>')
+            html.append(f'<td style="text-align:center;padding:5px;font-weight:bold;">{item["onl_name"]}</td>')
+            html.append(f'<td style="text-align:center;padding:5px;">{item["onl_code"]}</td>')
+            html.append(f'<td style="text-align:center;padding:5px;">{format_size(item["issue_size"])}</td>')
+            html.append("</tr>")
+        html.append("</table>")
+
+    # ---- 底部提示 ----
+    html.append('<p style="color:#666;font-size:12px;margin-top:12px;">💡 可转债申购无需市值，顶格申购中签概率最大，中签后缴款即可。</p>')
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-    html.append(f'<p style="color:#aaa;font-size:11px;margin-top:15px;">数据来源：巨潮资讯（cninfo）| {now_str}</p>')
+    html.append(f'<p style="color:#aaa;font-size:11px;">数据来源：巨潮资讯（cninfo）| {now_str}</p>')
 
     title = "🔔 可转债申购提醒"
+    return title, "\n".join(html)
+
+
+def build_upcoming_only_message(upcoming_issues):
+    """构建纯预告消息（今天没有，但未来几天有）"""
+    html = []
+    html.append('<h2 style="color:#2980b9;">📅 近期可转债申购预告</h2>')
+    html.append('<p style="color:#666;font-size:13px;">今天没有可申购的转债，以下是近期安排：</p>')
+    html.append('<table style="width:100%;border-collapse:collapse;font-size:13px;">')
+    html.append('<tr style="background:#d6eaf8;"><th style="padding:6px;">日期</th><th style="padding:6px;">转债名称</th><th style="padding:6px;">申购代码</th><th style="padding:6px;">发行规模</th></tr>')
+    for i, item in enumerate(upcoming_issues):
+        bg = "#ebf5fb" if i % 2 == 0 else "#ffffff"
+        html.append(f'<tr style="background:{bg};">')
+        html.append(f'<td style="text-align:center;padding:5px;">{item["onl_date"]}</td>')
+        html.append(f'<td style="text-align:center;padding:5px;font-weight:bold;">{item["onl_name"]}</td>')
+        html.append(f'<td style="text-align:center;padding:5px;">{item["onl_code"]}</td>')
+        html.append(f'<td style="text-align:center;padding:5px;">{format_size(item["issue_size"])}</td>')
+        html.append("</tr>")
+    html.append("</table>")
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    html.append(f'<p style="color:#aaa;font-size:11px;">数据来源：巨潮资讯（cninfo）| {now_str}</p>')
+
+    title = "📅 可转债申购预告"
     return title, "\n".join(html)
 
 
@@ -116,9 +160,9 @@ def build_error_message(error_detail):
     """构建接口异常告警 HTML 消息"""
     html = []
     html.append('<h2 style="color:#e67e22;">⚠️ 可转债数据获取异常</h2>')
-    html.append(f'<p style="color:#333;font-size:14px;">脚本在获取可转债申购数据时出错，请及时检查！</p>')
-    html.append(f'<table style="width:100%;border-collapse:collapse;font-size:13px;">')
-    html.append(f'<tr style="background:#fdebd0;"><th style="padding:8px;text-align:left;">项目</th><th style="padding:8px;text-align:left;">详情</th></tr>')
+    html.append('<p style="color:#333;font-size:14px;">脚本在获取可转债申购数据时出错，请及时检查！</p>')
+    html.append('<table style="width:100%;border-collapse:collapse;font-size:13px;">')
+    html.append('<tr style="background:#fdebd0;"><th style="padding:8px;text-align:left;">项目</th><th style="padding:8px;text-align:left;">详情</th></tr>')
     html.append(f'<tr><td style="padding:6px;font-weight:bold;">错误信息</td><td style="padding:6px;">{error_detail}</td></tr>')
     html.append(f'<tr><td style="padding:6px;font-weight:bold;">发生时间</td><td style="padding:6px;">{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</td></tr>')
     html.append(f'<tr><td style="padding:6px;font-weight:bold;">数据源</td><td style="padding:6px;">AKShare（巨潮资讯 cninfo）</td></tr>')
@@ -156,16 +200,12 @@ def send_pushplus(title, content, max_retries=2):
                 return True
             else:
                 print(f"[WARN] 推送返回异常: {result}")
-                if attempt < max_retries:
-                    time.sleep(3)
-                    continue
-                return False
         except Exception as e:
             print(f"[ERROR] 推送失败 (尝试 {attempt + 1}/{max_retries + 1}): {e}")
-            if attempt < max_retries:
-                time.sleep(3)
-                continue
-            return False
+
+        if attempt < max_retries:
+            time.sleep(3)
+
     return False
 
 
@@ -173,8 +213,10 @@ def main():
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"=== 可转债申购提醒 {now} ===")
 
+    today_str = datetime.now().strftime("%Y-%m-%d")
+
     try:
-        issues = get_cb_issues()
+        issues = get_cb_issues(today_str)
     except Exception as e:
         error_msg = str(e)
         print(f"[ERROR] 获取数据失败: {error_msg}")
@@ -189,23 +231,31 @@ def main():
         print("[INFO] 近期没有可转债申购信息，跳过推送。")
         return 0
 
-    # 只筛选今天可申购的转债
-    today_str = datetime.now().strftime("%Y-%m-%d")
+    # 分类：今天 vs 未来
     today_issues = [i for i in issues if i["onl_date"] == today_str]
+    upcoming_issues = [i for i in issues if i["onl_date"] != today_str]
 
-    if not today_issues:
-        print("[INFO] 今天没有可转债申购，跳过推送。")
+    if today_issues:
+        print(f"[INFO] 今天有 {len(today_issues)} 只可转债可申购：")
+        for item in today_issues:
+            print(f"  🔴 {item['onl_name']} | 代码: {item['onl_code']} | 规模: {format_size(item['issue_size'])}")
+
+        if upcoming_issues:
+            print(f"[INFO] 未来还有 {len(upcoming_issues)} 只转债待申购")
+
+        title, content = build_message(today_issues, upcoming_issues)
+        send_pushplus(title, content)
         return 0
 
-    print(f"[INFO] 今天有 {len(today_issues)} 只可转债可申购：")
-    for item in today_issues:
-        print(f"  🔴 {item['onl_name']} | 代码: {item['onl_code']} | 规模: {format_size(item['issue_size'])}")
+    # 今天没有，但未来几天有 → 推送预告
+    if upcoming_issues:
+        print(f"[INFO] 今天没有可申购转债，未来 {len(upcoming_issues)} 只将推出预告推送")
+        title, content = build_upcoming_only_message(upcoming_issues)
+        send_pushplus(title, content)
+        return 0
 
-    # 构建并推送消息
-    title, content = build_message(today_issues)
-    ok = send_pushplus(title, content)
-
-    return 0 if ok else 1
+    print("[INFO] 今天没有可转债申购，跳过推送。")
+    return 0
 
 
 if __name__ == "__main__":
