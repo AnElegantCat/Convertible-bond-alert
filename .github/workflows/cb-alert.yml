@@ -1,4 +1,4 @@
-name: 可转债申购提醒
+name: Convertible Bond Alert
 
 on:
   schedule:
@@ -28,4 +28,4 @@ jobs:
       - name: 运行可转债申购提醒
         env:
           PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
-        run: python cb_new_issue_alert.py
+        run: python cb_alert.py
