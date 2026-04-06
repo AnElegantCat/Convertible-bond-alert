@@ -68,5 +68,4 @@ GitHub Actions (cron 每天 8:30 CST)
 
 ## 数据来源
 
-东方财富（eastmoney）— 通过 [AKShare](https://github.com/akfamily/akshare) 开源库的 `bond_zh_cov` 接口调用。
-数据稳定可靠，覆盖 1000+ 只历史可转债，无需 API Token。
+东方财富
