@@ -173,7 +173,8 @@ def build_error_message(error_detail):
     html.append('<p style="color:#333;font-size:14px;">脚本在获取可转债申购数据时出错，请及时检查！</p>')
     html.append('<table style="width:100%;border-collapse:collapse;font-size:13px;">')
     html.append('<tr style="background:#fdebd0;"><th style="padding:8px;text-align:left;">项目</th><th style="padding:8px;text-align:left;">详情</th></tr>')
-    html.append(f'<tr><td style="padding:6px;font-weight:bold;">错误信息</td><td style="padding:6px;">{error_detail}</td></tr>')
+    safe_detail = error_detail.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    html.append(f'<tr><td style="padding:6px;font-weight:bold;">错误信息</td><td style="padding:6px;">{safe_detail}</td></tr>')
     html.append(f'<tr><td style="padding:6px;font-weight:bold;">发生时间</td><td style="padding:6px;">{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</td></tr>')
     html.append(f'<tr><td style="padding:6px;font-weight:bold;">数据源</td><td style="padding:6px;">AKShare（东方财富 bond_zh_cov）</td></tr>')
     html.append('</table>')
@@ -264,7 +265,6 @@ def main():
         send_pushplus(title, content)
         return 0
 
-    print("[INFO] 今天没有可转债申购，跳过推送。")
     return 0
 
 

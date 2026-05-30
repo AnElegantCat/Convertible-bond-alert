@@ -29,7 +29,10 @@
 ```
 .
 ├── cb_alert.py
-└── .github/workflows/cb-alert.yml
+├── requirements.txt
+└── .github/workflows/
+    ├── cb-alert.yml        # 申购提醒（工作日 8:30）
+    └── keep-alive.yml      # 保活（每月1号）
 ```
 
 ### 第 3 步：配置 Secret
