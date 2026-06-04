@@ -24,7 +24,9 @@ jobs:
           cache: 'pip'
 
       - name: 安装依赖
-        run: pip install -r requirements.txt --quiet
+        run: |
+          pip install --upgrade akshare --quiet
+          pip install -r requirements.txt --quiet
 
       - name: 运行可转债申购提醒
         env:

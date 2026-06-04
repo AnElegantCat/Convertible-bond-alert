@@ -35,8 +35,22 @@ def get_cb_issues(today_str):
     future_limit = (today + timedelta(days=14)).strftime("%Y-%m-%d")
 
     try:
-        # bond_zh_cov: 东方财富可转债全量数据（1000+条），一次调用获取全部
-        df = ak.bond_zh_cov()
+        # bond_zh_cov: 东方财富可转债全量数据（1000+条），带重试防止网络抖动
+        df = None
+        last_err = None
+        for attempt in range(3):
+            try:
+                df = ak.bond_zh_cov()
+                break
+            except Exception as e:
+                last_err = e
+                if "ended prematurely" not in str(e) and "timeout" not in str(e).lower():
+                    raise  # 非网络问题直接抛出
+                if attempt < 2:
+                    print(f"[WARN] 数据接口连接断开 (尝试 {attempt + 1}/3)，等待 {3 * (attempt + 1)} 秒后重试...")
+                    time.sleep(3 * (attempt + 1))
+        else:
+            raise RuntimeError(f"AKShare 接口调用失败(已重试3次): {last_err}")
     except Exception as e:
         raise RuntimeError(f"AKShare 接口调用失败: {e}")
 
