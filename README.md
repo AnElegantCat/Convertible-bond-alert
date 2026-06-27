@@ -1,7 +1,6 @@
-# Convertible Bond Alert
+# 可转债申购提醒
 
 ![GitHub Actions Status](https://github.com/AnElegantCat/Convertible-bond-alert/actions/workflows/cb-alert.yml/badge.svg)
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.12+-3776AB?logo=python)
 
 > 一个基于 GitHub Actions 的可转债申购提醒工具。工作日上午 6 点自动扫描东方财富可转债数据，当天有可申购转债时即时推送微信通知，让你不错过任何打新机会。
@@ -37,8 +36,6 @@
 3. Name 填：`PUSHPLUS_TOKEN`
 4. Secret 填你的 [PushPlus](https://www.pushplus.plus/) Token
 5. 点击 **Add secret**
-
-> 💡 没有 PushPlus？访问 https://www.pushplus.plus/ 注册并获取免费 Token。
 
 **部署完成！** 每天工作日早上 6:00（北京时间），脚本自动运行，有转债申购即时推送到微信。
 
@@ -127,26 +124,3 @@ export PUSHPLUS_TOKEN="your-token-here"
 # 运行脚本
 python cb_alert.py
 ```
-
----
-
-## 📝 常见问题
-
-**Q: 为什么推送时间不是 8:30？**
-
-A: 为避免 GitHub Actions 调度延迟导致推送晚于开盘，已提前至早上 6:00 CST 执行，确保在 9:30 开盘前收到提醒。
-
-**Q: 推送一直失败怎么办？**
-
-A: 检查 `PUSHPLUS_TOKEN` 是否配置正确，确认 PushPlus 账户处于激活状态。脚本有 2 次重试，失败后建议手动进入 GitHub Actions 查看日志。
-
-**Q: 可以改为其他推送渠道吗？**
-
-A: 当前仅支持 PushPlus。如需接入其他平台（如飞书、钉钉、 Bark），可查看代码中的 `send_pushplus` 函数自行扩展。
-
----
-
-## 📄 协议
-
-MIT License
-
