@@ -13,11 +13,26 @@ import sys
 import time
 import urllib.request
 from datetime import datetime
+from html import escape
+from zoneinfo import ZoneInfo
 
 # ============ 配置区 ============
 PUSHPLUS_TOKEN = os.environ.get("PUSHPLUS_TOKEN")
 PUSHPLUS_URL = "https://www.pushplus.plus/send"
+CHINA_TZ = ZoneInfo("Asia/Shanghai")
 # ================================
+
+
+def now_china():
+    """返回北京时间。"""
+    return datetime.now(CHINA_TZ)
+
+
+def safe_html(value):
+    """转义 HTML 特殊字符，避免接口异常数据破坏推送排版。"""
+    if value is None:
+        return ""
+    return escape(str(value), quote=True)
 
 
 def get_today_cb(today_str):
@@ -119,17 +134,17 @@ def build_message(today_issues):
         bg = "#fff5f5" if i % 2 == 0 else "#ffffff"
         rating = item.get("credit_rating") or "-"
         html.append(f'<tr style="background:{bg};">')
-        html.append(f'<td style="text-align:center;padding:6px;font-weight:bold;">{item["onl_name"]}</td>')
-        html.append(f'<td style="text-align:center;padding:6px;">{item["onl_code"]}</td>')
-        html.append(f'<td style="text-align:center;padding:6px;">{format_size(item["issue_size"])}</td>')
-        html.append(f'<td style="text-align:center;padding:6px;">{rating}</td>')
+        html.append(f'<td style="text-align:center;padding:6px;font-weight:bold;">{safe_html(item["onl_name"])}</td>')
+        html.append(f'<td style="text-align:center;padding:6px;">{safe_html(item["onl_code"])}</td>')
+        html.append(f'<td style="text-align:center;padding:6px;">{safe_html(format_size(item["issue_size"]))}</td>')
+        html.append(f'<td style="text-align:center;padding:6px;">{safe_html(rating)}</td>')
         html.append("</tr>")
     html.append("</table>")
     html.append('<p style="color:#e74c3c;font-size:13px;font-weight:bold;">⏰ 记得在交易时间（9:30-15:00）内顶格申购！</p>')
 
     # ---- 底部提示 ----
     html.append('<p style="color:#666;font-size:12px;margin-top:12px;">💡 可转债申购无需市值，顶格申购中签概率最大，中签后缴款即可。</p>')
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    now_str = now_china().strftime("%Y-%m-%d %H:%M")
     html.append(f'<p style="color:#aaa;font-size:11px;">数据来源：东方财富（AKShare）| {now_str}</p>')
 
     title = "🔔 可转债申购提醒"
@@ -143,9 +158,9 @@ def build_error_message(error_detail):
     html.append('<p style="color:#333;font-size:14px;">脚本在获取可转债申购数据时出错，请及时检查！</p>')
     html.append('<table style="width:100%;border-collapse:collapse;font-size:13px;">')
     html.append('<tr style="background:#fdebd0;"><th style="padding:8px;text-align:left;">项目</th><th style="padding:8px;text-align:left;">详情</th></tr>')
-    safe_detail = error_detail.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    safe_detail = safe_html(error_detail)
     html.append(f'<tr><td style="padding:6px;font-weight:bold;">错误信息</td><td style="padding:6px;">{safe_detail}</td></tr>')
-    html.append(f'<tr><td style="padding:6px;font-weight:bold;">发生时间</td><td style="padding:6px;">{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</td></tr>')
+    html.append(f'<tr><td style="padding:6px;font-weight:bold;">发生时间</td><td style="padding:6px;">{now_china().strftime("%Y-%m-%d %H:%M:%S")}</td></tr>')
     html.append(f'<tr><td style="padding:6px;font-weight:bold;">数据源</td><td style="padding:6px;">AKShare（东方财富 bond_zh_cov）</td></tr>')
     html.append('</table>')
     html.append('<p style="color:#666;font-size:12px;">可能原因：AKShare 版本过旧、东方财富接口变动、网络问题。</p>')
@@ -191,10 +206,11 @@ def send_pushplus(title, content, max_retries=2):
 
 
 def main():
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"=== 可转债申购提醒 {now} ===")
+    now = now_china()
+    now_str = now.strftime("%Y-%m-%d %H:%M:%S")
+    print(f"=== 可转债申购提醒 {now_str} ===")
 
-    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_str = now.strftime("%Y-%m-%d")
 
     try:
         issues = get_today_cb(today_str)
@@ -217,7 +233,8 @@ def main():
         print(f"  🔴 {item['onl_name']} | 代码: {item['onl_code']} | 规模: {format_size(item['issue_size'])}")
 
     title, content = build_message(issues)
-    send_pushplus(title, content)
+    if not send_pushplus(title, content):
+        return 1
     return 0
 
 
