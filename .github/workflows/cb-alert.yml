@@ -10,7 +10,7 @@ on:
 jobs:
   cb-alert:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -23,7 +23,7 @@ jobs:
           cache: 'pip'
 
       - name: 安装依赖
-        run: pip install --upgrade -r requirements.txt --quiet
+        run: pip install -r requirements.txt --quiet
 
       - name: 运行可转债申购提醒
         env:

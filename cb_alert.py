@@ -20,6 +20,23 @@ from zoneinfo import ZoneInfo
 PUSHPLUS_TOKEN = os.environ.get("PUSHPLUS_TOKEN")
 PUSHPLUS_URL = "https://www.pushplus.plus/send"
 CHINA_TZ = ZoneInfo("Asia/Shanghai")
+DATA_RETRY_COUNT = 3
+DATA_RETRY_BASE_DELAY = 3
+REQUIRED_COLUMNS = ("申购日期", "债券简称", "申购代码", "发行规模")
+RETRYABLE_ERROR_KEYWORDS = (
+    "ended prematurely",
+    "timed out",
+    "timeout",
+    "connection",
+    "remote end closed",
+    "temporarily unavailable",
+    "service unavailable",
+    "bad gateway",
+    "gateway timeout",
+    "http error 5",
+    "max retries exceeded",
+    "read timed out",
+)
 # ================================
 
 
@@ -33,6 +50,37 @@ def safe_html(value):
     if value is None:
         return ""
     return escape(str(value), quote=True)
+
+
+def is_retryable_error(error):
+    """判断 AKShare 调用失败是否更像临时网络/服务端问题。"""
+    if isinstance(error, (TimeoutError, ConnectionError)):
+        return True
+    message = str(error).lower()
+    return any(keyword in message for keyword in RETRYABLE_ERROR_KEYWORDS)
+
+
+def normalize_apply_date(value):
+    """把接口返回的申购日期统一为 YYYY-MM-DD。"""
+    if value is None:
+        return None
+
+    text = str(value).strip()
+    if not text or text in ("nan", "None", "NaT"):
+        return None
+
+    if text.endswith(".0") and text[:-2].isdigit():
+        text = text[:-2]
+
+    if len(text) == 8 and text.isdigit():
+        candidate = f"{text[:4]}-{text[4:6]}-{text[6:8]}"
+    else:
+        candidate = text[:10].replace("/", "-").replace(".", "-")
+
+    try:
+        return datetime.strptime(candidate, "%Y-%m-%d").strftime("%Y-%m-%d")
+    except ValueError:
+        return None
 
 
 def get_today_cb(today_str):
@@ -50,36 +98,35 @@ def get_today_cb(today_str):
         # bond_zh_cov: 东方财富可转债全量数据（1000+条），带重试防止网络抖动
         df = None
         last_err = None
-        for attempt in range(3):
+        for attempt in range(DATA_RETRY_COUNT):
             try:
                 df = ak.bond_zh_cov()
                 break
             except Exception as e:
                 last_err = e
-                if "ended prematurely" not in str(e) and "timeout" not in str(e).lower():
+                if not is_retryable_error(e):
                     raise  # 非网络问题直接抛出
-                if attempt < 2:
-                    print(f"[WARN] 数据接口连接断开 (尝试 {attempt + 1}/3)，等待 {3 * (attempt + 1)} 秒后重试...")
-                    time.sleep(3 * (attempt + 1))
+                if attempt < DATA_RETRY_COUNT - 1:
+                    wait_seconds = DATA_RETRY_BASE_DELAY * (attempt + 1)
+                    print(f"[WARN] 数据接口临时异常 (尝试 {attempt + 1}/{DATA_RETRY_COUNT})，等待 {wait_seconds} 秒后重试: {e}")
+                    time.sleep(wait_seconds)
         else:
-            raise RuntimeError(f"AKShare 接口调用失败(已重试3次): {last_err}")
+            raise RuntimeError(f"AKShare 接口调用失败(已重试{DATA_RETRY_COUNT}次): {last_err}")
     except Exception as e:
         raise RuntimeError(f"AKShare 接口调用失败: {e}")
 
     if df is None or df.empty:
         raise RuntimeError("bond_zh_cov 返回空数据，可能是接口变动或网络问题")
 
+    missing_columns = [column for column in REQUIRED_COLUMNS if column not in df.columns]
+    if missing_columns:
+        raise RuntimeError(f"bond_zh_cov 返回字段缺失: {', '.join(missing_columns)}")
+
     issues = []
     for _, row in df.iterrows():
-        apply_date = str(row.get("申购日期", "")).strip()
-        if not apply_date or apply_date in ("nan", "None", "NaT"):
+        apply_date_fmt = normalize_apply_date(row.get("申购日期"))
+        if apply_date_fmt is None:
             continue
-
-        # 统一日期格式为 YYYY-MM-DD（接口返回的可能是 YYYYMMDD）
-        if len(apply_date) == 8:
-            apply_date_fmt = f"{apply_date[:4]}-{apply_date[4:6]}-{apply_date[6:8]}"
-        else:
-            apply_date_fmt = apply_date[:10]  # 截断可能的时间部分
 
         # 只保留今天的数据
         if apply_date_fmt != today_str:
@@ -188,8 +235,8 @@ def send_pushplus(title, content, max_retries=2):
                 data=json.dumps(payload).encode("utf-8"),
                 headers={"Content-Type": "application/json"},
             )
-            resp = urllib.request.urlopen(req, timeout=30)
-            result = json.loads(resp.read().decode("utf-8"))
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
 
             if result.get("code") == 200:
                 print(f"[OK] 推送成功: {result.get('msg', '')}")
