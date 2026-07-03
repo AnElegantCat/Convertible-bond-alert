@@ -3,7 +3,7 @@
 ![GitHub Actions Status](https://github.com/AnElegantCat/Convertible-bond-alert/actions/workflows/cb-alert.yml/badge.svg)
 ![Python](https://img.shields.io/badge/python-3.12+-3776AB?logo=python)
 
-> 一个基于 GitHub Actions 的可转债申购提醒工具。工作日上午 6 点自动扫描东方财富可转债数据，当天有可申购转债时即时推送微信通知，让你不错过任何打新机会。
+> 一个基于 GitHub Actions 的可转债申购提醒工具。工作日上午 9 点自动扫描东方财富可转债数据，当天有可申购转债时即时推送微信通知，让你不错过任何打新机会。
 
 ---
 
@@ -25,7 +25,7 @@
 ├── cb_alert.py              # 核心脚本
 ├── requirements.txt         # 依赖声明
 └── .github/workflows/
-    ├── cb-alert.yml         # 申购提醒（工作日 6:00 CST）
+    ├── cb-alert.yml         # 申购提醒（工作日 9:00 CST）
     └── keep-alive.yml       # 保活（每月 1 号）
 ```
 
@@ -37,7 +37,7 @@
 4. Secret 填你的 [PushPlus](https://www.pushplus.plus/) Token
 5. 点击 **Add secret**
 
-**部署完成！** 每天工作日早上 6:00（北京时间），脚本自动运行，有转债申购即时推送到微信。
+**部署完成！** 每天工作日早上 9:00（北京时间），脚本自动运行，有转债申购即时推送到微信。
 
 ---
 
@@ -46,7 +46,7 @@
 | 特性 | 说明 |
 |------|------|
 | 📊 **数据源** | AKShare 调用东方财富 `bond_zh_cov` 接口，稳定可靠，无需额外 API Key |
-| 📅 **定时执行** | GitHub Actions 工作日 6:00 CST 自动触发，早于开盘 |
+| 📅 **定时执行** | GitHub Actions 工作日 9:00 CST 自动触发，早于开盘 |
 | 📱 **微信推送** | 通过 PushPlus 推送 HTML 格式消息到微信，信息完整 |
 | 🔄 **自动重试** | 数据接口支持 3 次重试，推送支持 2 次重试 |
 | ⚠️ **异常告警** | 接口调用失败时自动推送告警，防止沉默失效 |
@@ -81,7 +81,7 @@
 
 脚本在获取可转债申购数据时出错，请及时检查！
 - 错误信息: xxx
-- 发生时间: 2026-06-12 06:00:15
+- 发生时间: 2026-06-12 09:00:15
 - 数据源: AKShare（东方财富 bond_zh_cov）
 ```
 
@@ -90,7 +90,7 @@
 ## 🔧 工作原理
 
 ```
-GitHub Actions (cron: 工作日 6:00 CST)
+GitHub Actions (cron: 工作日 9:00 CST)
     │
     ├─ pip install --upgrade akshare  ← 每次自动升级依赖
     │

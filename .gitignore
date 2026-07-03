@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Python
 __pycache__/
 *.py[cod]
@@ -14,20 +13,3 @@ Thumbs.db
 
 # WorkBuddy
 .workbuddy/
-=======
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
-
-# IDE
-.vscode/
-.idea/
-
-# OS
-.DS_Store
-Thumbs.db
-
-# WorkBuddy
-.workbuddy/
->>>>>>> c08ea70527a34095bc82c87b7a801761882497b7

@@ -2,9 +2,8 @@ name: Convertible Bond Alert
 
 on:
   schedule:
-    # 工作日 6:00 北京时间 (UTC+8 = 前一天 22:00 UTC)
-    # 提前运行，避免 GitHub Actions 调度延迟导致中午才推送
-    - cron: '0 22 * * 0-4'
+    # 工作日 9:00 北京时间 (UTC+8 = 当天 01:00 UTC)
+    - cron: '0 1 * * 1-5'
   # 支持手动触发，方便调试
   workflow_dispatch:
 
