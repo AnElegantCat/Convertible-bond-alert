@@ -25,7 +25,7 @@
 ├── cb_alert.py              # 核心脚本
 ├── requirements.txt         # 依赖声明
 └── .github/workflows/
-    ├── cb-alert.yml         # 申购提醒（工作日 9:00 CST）
+    ├── cb-alert.yml         # 申购提醒（工作日 9:07 CST）
     └── keep-alive.yml       # 保活（每月 1 号）
 ```
 
@@ -37,7 +37,7 @@
 4. Secret 填你的 [PushPlus](https://www.pushplus.plus/) Token
 5. 点击 **Add secret**
 
-**部署完成！** 每天工作日早上 9:00（北京时间），脚本自动运行，有转债申购即时推送到微信。
+**部署完成！** 每个工作日早上 9:07（北京时间），脚本自动运行，有转债申购即时推送到微信。
 
 ---
 
@@ -46,7 +46,7 @@
 | 特性 | 说明 |
 |------|------|
 | 📊 **数据源** | AKShare 调用东方财富 `bond_zh_cov` 接口，稳定可靠，无需额外 API Key |
-| 📅 **定时执行** | GitHub Actions 工作日 9:00 CST 自动触发，早于开盘 |
+| 📅 **定时执行** | GitHub Actions 工作日 9:07 CST 自动触发（错开整点高峰，减少排队延迟），早于开盘 |
 | 📱 **微信推送** | 通过 PushPlus 推送 HTML 格式消息到微信，信息完整 |
 | 🔄 **自动重试** | 数据接口支持 3 次重试，推送支持 2 次重试 |
 | ⚠️ **异常告警** | 接口调用失败时自动推送告警，防止沉默失效 |
@@ -90,9 +90,9 @@
 ## 🔧 工作原理
 
 ```
-GitHub Actions (cron: 工作日 9:00 CST)
+GitHub Actions (cron: 工作日 9:07 CST，错开整点高峰)
     │
-    ├─ pip install --upgrade akshare  ← 每次自动升级依赖
+    ├─ pip install -r requirements.txt ← 安装锁定版本依赖，可复现
     │
     ├─ 调用 AKShare bond_zh_cov()     ← 获取东方财富全量可转债数据
     │   └─ 网络异常自动重试 3 次
@@ -116,7 +116,7 @@ GitHub Actions (cron: 工作日 9:00 CST)
 
 ```bash
 # 安装依赖
-pip install akshare
+pip install -r requirements.txt
 
 # 设置 Token 环境变量
 export PUSHPLUS_TOKEN="your-token-here"

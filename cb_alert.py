@@ -16,6 +16,11 @@ from datetime import datetime
 from html import escape
 from zoneinfo import ZoneInfo
 
+# Windows 控制台/重定向输出可能是 GBK 编码，消息里的 emoji 会导致 UnicodeEncodeError
+for _stream in (sys.stdout, sys.stderr):
+    if _stream is not None and hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
 # ============ 配置区 ============
 PUSHPLUS_TOKEN = os.environ.get("PUSHPLUS_TOKEN")
 PUSHPLUS_URL = "https://www.pushplus.plus/send"
@@ -75,12 +80,54 @@ def normalize_apply_date(value):
     if len(text) == 8 and text.isdigit():
         candidate = f"{text[:4]}-{text[4:6]}-{text[6:8]}"
     else:
-        candidate = text[:10].replace("/", "-").replace(".", "-")
+        # 先剥离时间部分（"2026-07-04 00:00:00" / ISO "T"），避免非零填充日期被定长截断截坏
+        date_part = text.split(" ")[0].split("T")[0]
+        candidate = date_part.replace("/", "-").replace(".", "-")
 
     try:
+        # strptime 接受非零填充（2026-7-4），strftime 统一输出为零填充
         return datetime.strptime(candidate, "%Y-%m-%d").strftime("%Y-%m-%d")
     except ValueError:
         return None
+
+
+def normalize_apply_code(value):
+    """清理申购代码：A股申购代码固定 6 位，列被 pandas 数值化时会丢前导零、带 .0 后缀。"""
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if not text or text in ("nan", "None"):
+        return ""
+    if text.endswith(".0") and text[:-2].isdigit():
+        text = text[:-2]
+    if text.isdigit() and len(text) < 6:
+        text = text.zfill(6)
+    return text
+
+
+def fetch_bond_data():
+    """
+    调用 AKShare bond_zh_cov 拉取东方财富可转债全量数据（1000+条）。
+    网络/服务端临时异常自动重试，其余异常直接包装抛出。
+    """
+    try:
+        import akshare as ak
+    except ImportError as e:
+        raise RuntimeError("akshare 未安装，请执行: pip install -r requirements.txt") from e
+
+    last_err = None
+    for attempt in range(DATA_RETRY_COUNT):
+        try:
+            return ak.bond_zh_cov()
+        except Exception as e:
+            if not is_retryable_error(e):
+                raise RuntimeError(f"AKShare 接口调用失败: {e}") from e
+            last_err = e
+            if attempt < DATA_RETRY_COUNT - 1:
+                wait_seconds = DATA_RETRY_BASE_DELAY * (attempt + 1)
+                print(f"[WARN] 数据接口临时异常 (尝试 {attempt + 1}/{DATA_RETRY_COUNT})，等待 {wait_seconds} 秒后重试: {e}")
+                time.sleep(wait_seconds)
+    raise RuntimeError(f"AKShare 接口调用失败(已重试{DATA_RETRY_COUNT}次): {last_err}") from last_err
 
 
 def get_today_cb(today_str):
@@ -89,31 +136,7 @@ def get_today_cb(today_str):
     数据来源：东方财富（通过 AKShare bond_zh_cov 接口），稳定可靠
     返回今天可申购转债的列表
     """
-    try:
-        import akshare as ak
-    except ImportError:
-        raise ImportError("akshare 未安装，请执行: pip install akshare")
-
-    try:
-        # bond_zh_cov: 东方财富可转债全量数据（1000+条），带重试防止网络抖动
-        df = None
-        last_err = None
-        for attempt in range(DATA_RETRY_COUNT):
-            try:
-                df = ak.bond_zh_cov()
-                break
-            except Exception as e:
-                last_err = e
-                if not is_retryable_error(e):
-                    raise  # 非网络问题直接抛出
-                if attempt < DATA_RETRY_COUNT - 1:
-                    wait_seconds = DATA_RETRY_BASE_DELAY * (attempt + 1)
-                    print(f"[WARN] 数据接口临时异常 (尝试 {attempt + 1}/{DATA_RETRY_COUNT})，等待 {wait_seconds} 秒后重试: {e}")
-                    time.sleep(wait_seconds)
-        else:
-            raise RuntimeError(f"AKShare 接口调用失败(已重试{DATA_RETRY_COUNT}次): {last_err}")
-    except Exception as e:
-        raise RuntimeError(f"AKShare 接口调用失败: {e}")
+    df = fetch_bond_data()
 
     if df is None or df.empty:
         raise RuntimeError("bond_zh_cov 返回空数据，可能是接口变动或网络问题")
@@ -133,7 +156,7 @@ def get_today_cb(today_str):
             continue
 
         bond_name = str(row.get("债券简称", "")).strip()
-        apply_code = str(row.get("申购代码", "")).strip()
+        apply_code = normalize_apply_code(row.get("申购代码"))
         if not bond_name or bond_name in ("nan", "None"):
             continue
 
@@ -256,6 +279,9 @@ def main():
     now = now_china()
     now_str = now.strftime("%Y-%m-%d %H:%M:%S")
     print(f"=== 可转债申购提醒 {now_str} ===")
+
+    if not PUSHPLUS_TOKEN:
+        print("[WARN] PUSHPLUS_TOKEN 未配置，数据获取仍会执行，但无法推送微信消息")
 
     today_str = now.strftime("%Y-%m-%d")
 

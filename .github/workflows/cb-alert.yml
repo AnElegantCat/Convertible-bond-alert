@@ -2,8 +2,9 @@ name: Convertible Bond Alert
 
 on:
   schedule:
-    # 工作日 9:00 北京时间 (UTC+8 = 当天 01:00 UTC)
-    - cron: '0 1 * * 1-5'
+    # 工作日 9:07 北京时间 (UTC+8 = 当天 01:07 UTC)
+    # 刻意错开整点：GitHub Actions 整点 cron 排队严重，官方建议避开整点以减少延迟
+    - cron: '7 1 * * 1-5'
   # 支持手动触发，方便调试
   workflow_dispatch:
 
