@@ -124,4 +124,7 @@ export PUSHPLUS_TOKEN="your-token-here"
 
 # 运行脚本
 python cb_alert.py
+
+# 运行测试
+python -m unittest -v
 ```

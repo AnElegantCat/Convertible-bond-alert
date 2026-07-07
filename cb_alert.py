@@ -30,6 +30,7 @@ CHINA_TZ = ZoneInfo("Asia/Shanghai")
 DATA_RETRY_COUNT = 3
 DATA_RETRY_BASE_DELAY = 3
 REQUIRED_COLUMNS = ("申购日期", "债券简称", "申购代码", "发行规模")
+RETRYABLE_HTTP_STATUS_CODES = {429, 500, 502, 503, 504}
 RETRYABLE_ERROR_KEYWORDS = (
     "ended prematurely",
     "timed out",
@@ -86,6 +87,8 @@ def compact_error_detail(error_detail, limit=500):
 
 def is_retryable_error(error):
     """判断 AKShare 调用失败是否更像临时网络/服务端问题。"""
+    if isinstance(error, urllib.error.HTTPError):
+        return error.code in RETRYABLE_HTTP_STATUS_CODES
     if isinstance(error, (TimeoutError, ConnectionError)):
         return True
     message = str(error).lower()
