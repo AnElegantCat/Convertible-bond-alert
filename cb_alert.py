@@ -11,9 +11,10 @@ import json
 import os
 import sys
 import time
+import urllib.error
 import urllib.request
 from datetime import datetime
-from html import escape
+from html import unescape
 from zoneinfo import ZoneInfo
 
 # Windows 控制台/重定向输出可能是 GBK 编码，消息里的 emoji 会导致 UnicodeEncodeError
@@ -24,6 +25,7 @@ for _stream in (sys.stdout, sys.stderr):
 # ============ 配置区 ============
 PUSHPLUS_TOKEN = os.environ.get("PUSHPLUS_TOKEN")
 PUSHPLUS_URL = "https://www.pushplus.plus/send"
+PUSHPLUS_TEMPLATE = "markdown"
 CHINA_TZ = ZoneInfo("Asia/Shanghai")
 DATA_RETRY_COUNT = 3
 DATA_RETRY_BASE_DELAY = 3
@@ -50,11 +52,36 @@ def now_china():
     return datetime.now(CHINA_TZ)
 
 
-def safe_html(value):
-    """转义 HTML 特殊字符，避免接口异常数据破坏推送排版。"""
+def safe_markdown_cell(value):
+    """清理 Markdown 表格单元格，避免接口数据破坏表格结构。"""
     if value is None:
         return ""
-    return escape(str(value), quote=True)
+    return str(value).replace("|", "\\|").replace("\r", " ").replace("\n", " ").strip()
+
+
+def summarize_response_body(body, limit=300):
+    """把 PushPlus 的非 JSON 响应压缩成可读摘要，避免日志刷出整页 HTML。"""
+    text = unescape(str(body or ""))
+    text = text.replace("\r", " ").replace("\n", " ").replace("\t", " ")
+    while "  " in text:
+        text = text.replace("  ", " ")
+
+    lower_text = text.lower()
+    if "请求携带恶意参数" in text or "星尘盾" in text:
+        return "PushPlus 星尘盾拦截：请求携带恶意参数，已被拦截。"
+    if "<!doctype html" in lower_text or "<html" in lower_text:
+        return "PushPlus 返回了 HTML 页面，可能是风控/网关拦截。"
+    if len(text) > limit:
+        return text[:limit] + "..."
+    return text
+
+
+def compact_error_detail(error_detail, limit=500):
+    """告警内容只保留错误摘要，避免把整页拦截 HTML 再提交给 PushPlus。"""
+    summary = summarize_response_body(error_detail, limit=limit)
+    if len(summary) > limit:
+        return summary[:limit] + "..."
+    return summary
 
 
 def is_retryable_error(error):
@@ -193,49 +220,50 @@ def format_size(size_in_yi):
 
 
 def build_message(today_issues):
-    """构建 HTML 格式推送消息（当天可申购）"""
-    html = []
+    """构建 Markdown 格式推送消息（当天可申购）。"""
+    lines = []
 
-    # ---- 今日申购 ----
-    html.append('<h2 style="color:#e74c3c;">🔔 今天可申购！</h2>')
-    html.append('<table style="width:100%;border-collapse:collapse;font-size:14px;">')
-    html.append('<tr style="background:#f8d7da;"><th style="padding:8px;">转债名称</th><th style="padding:8px;">申购代码</th><th style="padding:8px;">发行规模</th><th style="padding:8px;">信用评级</th></tr>')
-    for i, item in enumerate(today_issues):
-        bg = "#fff5f5" if i % 2 == 0 else "#ffffff"
+    lines.append("## 今天可申购")
+    lines.append("")
+    lines.append("| 转债名称 | 申购代码 | 发行规模 | 信用评级 |")
+    lines.append("| --- | --- | --- | --- |")
+    for item in today_issues:
         rating = item.get("credit_rating") or "-"
-        html.append(f'<tr style="background:{bg};">')
-        html.append(f'<td style="text-align:center;padding:6px;font-weight:bold;">{safe_html(item["onl_name"])}</td>')
-        html.append(f'<td style="text-align:center;padding:6px;">{safe_html(item["onl_code"])}</td>')
-        html.append(f'<td style="text-align:center;padding:6px;">{safe_html(format_size(item["issue_size"]))}</td>')
-        html.append(f'<td style="text-align:center;padding:6px;">{safe_html(rating)}</td>')
-        html.append("</tr>")
-    html.append("</table>")
-    html.append('<p style="color:#e74c3c;font-size:13px;font-weight:bold;">⏰ 记得在交易时间（9:30-15:00）内顶格申购！</p>')
-
-    # ---- 底部提示 ----
-    html.append('<p style="color:#666;font-size:12px;margin-top:12px;">💡 可转债申购无需市值，顶格申购中签概率最大，中签后缴款即可。</p>')
+        lines.append(
+            "| {name} | {code} | {size} | {rating} |".format(
+                name=safe_markdown_cell(item["onl_name"]),
+                code=safe_markdown_cell(item["onl_code"]),
+                size=safe_markdown_cell(format_size(item["issue_size"])),
+                rating=safe_markdown_cell(rating),
+            )
+        )
+    lines.append("")
+    lines.append("记得在交易时间（9:30-15:00）内顶格申购。")
+    lines.append("可转债申购无需市值，顶格申购中签概率最大，中签后缴款即可。")
     now_str = now_china().strftime("%Y-%m-%d %H:%M")
-    html.append(f'<p style="color:#aaa;font-size:11px;">数据来源：东方财富（AKShare）| {now_str}</p>')
+    lines.append("")
+    lines.append(f"数据来源：东方财富（AKShare）| {now_str}")
 
-    title = "🔔 可转债申购提醒"
-    return title, "\n".join(html)
+    title = "可转债申购提醒"
+    return title, "\n".join(lines)
 
 
 def build_error_message(error_detail):
-    """构建接口异常告警 HTML 消息"""
-    html = []
-    html.append('<h2 style="color:#e67e22;">⚠️ 可转债数据获取异常</h2>')
-    html.append('<p style="color:#333;font-size:14px;">脚本在获取可转债申购数据时出错，请及时检查！</p>')
-    html.append('<table style="width:100%;border-collapse:collapse;font-size:13px;">')
-    html.append('<tr style="background:#fdebd0;"><th style="padding:8px;text-align:left;">项目</th><th style="padding:8px;text-align:left;">详情</th></tr>')
-    safe_detail = safe_html(error_detail)
-    html.append(f'<tr><td style="padding:6px;font-weight:bold;">错误信息</td><td style="padding:6px;">{safe_detail}</td></tr>')
-    html.append(f'<tr><td style="padding:6px;font-weight:bold;">发生时间</td><td style="padding:6px;">{now_china().strftime("%Y-%m-%d %H:%M:%S")}</td></tr>')
-    html.append(f'<tr><td style="padding:6px;font-weight:bold;">数据源</td><td style="padding:6px;">AKShare（东方财富 bond_zh_cov）</td></tr>')
-    html.append('</table>')
-    html.append('<p style="color:#666;font-size:12px;">可能原因：AKShare 版本过旧、东方财富接口变动、网络问题。</p>')
-    html.append('<p style="color:#666;font-size:12px;">建议：检查 GitHub Actions 运行日志，或在本地执行 <code>pip install --upgrade akshare</code>。</p>')
-    return "⚠️ 可转债提醒脚本异常", "\n".join(html)
+    """构建接口异常告警 Markdown 消息。"""
+    safe_detail = compact_error_detail(error_detail)
+    lines = [
+        "## 可转债数据获取异常",
+        "",
+        "脚本在获取可转债申购数据时出错，请及时检查。",
+        "",
+        f"- 错误信息：{safe_detail}",
+        f"- 发生时间：{now_china().strftime('%Y-%m-%d %H:%M:%S')}",
+        "- 数据源：AKShare（东方财富 bond_zh_cov）",
+        "",
+        "可能原因：AKShare 版本过旧、东方财富接口变动、网络问题。",
+        "建议：检查 GitHub Actions 运行日志，或在本地执行 `pip install --upgrade akshare`。",
+    ]
+    return "可转债提醒脚本异常", "\n".join(lines)
 
 
 def send_pushplus(title, content, max_retries=2):
@@ -248,7 +276,7 @@ def send_pushplus(title, content, max_retries=2):
         "token": PUSHPLUS_TOKEN,
         "title": title,
         "content": content,
-        "template": "html",
+        "template": PUSHPLUS_TEMPLATE,
     }
 
     for attempt in range(max_retries + 1):
@@ -256,16 +284,29 @@ def send_pushplus(title, content, max_retries=2):
             req = urllib.request.Request(
                 PUSHPLUS_URL,
                 data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
+                headers={
+                    "Content-Type": "application/json; charset=utf-8",
+                    "Accept": "application/json",
+                    "User-Agent": "convertible-bond-alert/1.0",
+                },
             )
             with urllib.request.urlopen(req, timeout=30) as resp:
-                result = json.loads(resp.read().decode("utf-8"))
+                body = resp.read().decode("utf-8", errors="replace")
+
+            try:
+                result = json.loads(body)
+            except json.JSONDecodeError:
+                print(f"[WARN] PushPlus 返回非 JSON 响应: {summarize_response_body(body)}")
+                result = {}
 
             if result.get("code") == 200:
                 print(f"[OK] 推送成功: {result.get('msg', '')}")
                 return True
             else:
                 print(f"[WARN] 推送返回异常: {result}")
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            print(f"[ERROR] 推送失败 HTTP {e.code}: {summarize_response_body(body)}")
         except Exception as e:
             print(f"[ERROR] 推送失败 (尝试 {attempt + 1}/{max_retries + 1}): {e}")
 
