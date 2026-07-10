@@ -13,7 +13,7 @@
 
 1. 打开 https://github.com/new
 2. 仓库名填 `convertible-bond-alert`
-3. **设为 Private**（避免 Token 暴露风险）
+3. **设为 Public**（Actions 分钟无限免费，可支撑每日提前入队+忙等窗口；Token 存于加密 Secrets，日志自动打码，不会暴露）
 4. 点击 **Create repository**
 
 ### 第 2 步：上传代码
@@ -25,7 +25,7 @@
 ├── cb_alert.py              # 核心脚本
 ├── requirements.txt         # 依赖声明
 └── .github/workflows/
-    ├── cb-alert.yml         # 申购提醒（工作日 9:07 CST）
+    ├── cb-alert.yml         # 申购提醒（4:07 CST 入队，9:07 CST 执行）
     └── keep-alive.yml       # 保活（每月 1 号）
 ```
 
@@ -37,7 +37,7 @@
 4. Secret 填你的 [PushPlus](https://www.pushplus.plus/) Token
 5. 点击 **Add secret**
 
-**部署完成！** 每个工作日早上 9:07（北京时间），脚本自动运行，有转债申购即时推送到微信。
+**部署完成！** 每个工作日北京时间 4:07 提前进入 GitHub 队列，忙等到 9:07 精确执行，确保 9:30 开盘前把转债申购推送到微信。
 
 ---
 
@@ -46,7 +46,7 @@
 | 特性 | 说明 |
 |------|------|
 | 📊 **数据源** | AKShare 调用东方财富 `bond_zh_cov` 接口，稳定可靠，无需额外 API Key |
-| 📅 **定时执行** | GitHub Actions 工作日 9:07 CST 自动触发（错开整点高峰，减少排队延迟），早于开盘 |
+| 📅 **定时执行** | 工作日 4:07 CST 提前入队 + 忙等窗口精确执行在 9:07 CST，对抗 GitHub 排队延迟，保证 9:30 开盘前送达 |
 | 📱 **微信推送** | 通过 PushPlus 推送 Markdown 格式消息到微信，信息完整 |
 | 🔄 **自动重试** | 数据接口支持 3 次重试，推送支持 2 次重试 |
 | ⚠️ **异常告警** | 接口调用失败时自动推送告警，防止沉默失效 |
@@ -91,7 +91,9 @@
 ## 🔧 工作原理
 
 ```
-GitHub Actions (cron: 工作日 9:07 CST，错开整点高峰)
+GitHub Actions (cron: 工作日 4:07 CST 提前入队)
+    │
+    ├─ 忙等窗口：循环等待到 9:07 CST ← 把不可控的排队延迟转成固定执行时刻
     │
     ├─ pip install -r requirements.txt ← 安装锁定版本依赖，可复现
     │
