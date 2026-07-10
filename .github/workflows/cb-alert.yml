@@ -2,20 +2,55 @@ name: Convertible Bond Alert
 
 on:
   schedule:
-    # 工作日 9:07 北京时间 (UTC+8 = 当天 01:07 UTC)
-    # 刻意错开整点：GitHub Actions 整点 cron 排队严重，官方建议避开整点以减少延迟
-    - cron: '7 1 * * 1-5'
+    # 北京时间工作日 4:07 先进入 GitHub 队列（提前 5 小时以吸收排队延迟）；
+    # 真正执行由下面的时间窗口精确控制在 9:07 CST，确保 9:30 开盘前推送到。
+    # 缓冲 5h 安全低于 GitHub 单 job 6h 硬上限。
+    - cron: '7 20 * * 0-4'
   # 支持手动触发，方便调试
   workflow_dispatch:
 
 jobs:
   cb-alert:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 需容纳最多 5h 忙等 + 各步骤，且低于平台 6h(360min) 上限
+    timeout-minutes: 330
     permissions:
       contents: read
 
     steps:
+      - name: 控制北京时间推送窗口
+        shell: bash
+        env:
+          TZ: Asia/Shanghai
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_EVENT_NAME}" != "schedule" ]]; then
+            echo "手动触发，直接执行可转债申购检查。"
+            exit 0
+          fi
+
+          today=$(date +%F)
+          target_epoch=$(date -d "$today 09:07:00" +%s)
+          now_epoch=$(date +%s)
+
+          if (( now_epoch >= target_epoch )); then
+            echo "当前北京时间 $(date '+%F %T')，GitHub 调度已晚到，立即执行可转债申购检查。"
+            exit 0
+          fi
+
+          while (( now_epoch < target_epoch )); do
+            wait_seconds=$(( target_epoch - now_epoch ))
+            if (( wait_seconds > 300 )); then
+              wait_seconds=300
+            fi
+            echo "当前北京时间 $(date '+%F %T')，等待 ${wait_seconds} 秒后继续检查。"
+            sleep "$wait_seconds"
+            now_epoch=$(date +%s)
+          done
+
+          echo "当前北京时间 $(date '+%F %T')，进入可转债申购检查。"
+
       - name: Checkout
         uses: actions/checkout@v5
 
