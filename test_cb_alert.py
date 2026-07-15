@@ -44,8 +44,8 @@ class ConvertibleBondAlertTests(unittest.TestCase):
         self.assertEqual(cb_alert.format_size(None), "未知")
         self.assertEqual(cb_alert.format_size("not-a-number"), "未知")
 
-    def test_build_message_escapes_markdown_table_cells(self):
-        _, content = cb_alert.build_message([
+    def test_build_message_renders_card_layout_and_escapes_cells(self):
+        title, content = cb_alert.build_message([
             {
                 "onl_name": "A|B转债",
                 "onl_code": "001234",
@@ -53,7 +53,21 @@ class ConvertibleBondAlertTests(unittest.TestCase):
                 "credit_rating": "AA|+",
             }
         ])
-        self.assertIn("| A\\|B转债 | 001234 | 1.20亿 | AA\\|+ |", content)
+        self.assertIn("1 只", title)
+        self.assertIn("**A\\|B转债**", content)
+        self.assertIn("申购代码：`001234`", content)
+        self.assertIn("发行规模：1.20亿", content)
+        self.assertIn("信用评级：AA\\|+", content)
+
+    def test_build_message_separates_multiple_bonds(self):
+        _, content = cb_alert.build_message([
+            {"onl_name": "甲转债", "onl_code": "111111", "issue_size": "1", "credit_rating": "AAA"},
+            {"onl_name": "乙转债", "onl_code": "222222", "issue_size": "2", "credit_rating": "AA+"},
+        ])
+        # 两只之间应有一条分隔线，最后一只后面不重复
+        self.assertEqual(content.count("\n---\n"), 1)
+        self.assertIn("**甲转债**", content)
+        self.assertIn("**乙转债**", content)
 
     def test_summarize_response_body_compacts_html_and_stardust_block(self):
         self.assertEqual(

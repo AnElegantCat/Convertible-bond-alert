@@ -223,31 +223,38 @@ def format_size(size_in_yi):
 
 
 def build_message(today_issues):
-    """构建 Markdown 格式推送消息（当天可申购）。"""
-    lines = []
+    """构建 Markdown 格式推送消息（当天可申购）。
 
-    lines.append("## 今天可申购")
-    lines.append("")
-    lines.append("| 转债名称 | 申购代码 | 发行规模 | 信用评级 |")
-    lines.append("| --- | --- | --- | --- |")
-    for item in today_issues:
-        rating = item.get("credit_rating") or "-"
-        lines.append(
-            "| {name} | {code} | {size} | {rating} |".format(
-                name=safe_markdown_cell(item["onl_name"]),
-                code=safe_markdown_cell(item["onl_code"]),
-                size=safe_markdown_cell(format_size(item["issue_size"])),
-                rating=safe_markdown_cell(rating),
-            )
-        )
-    lines.append("")
-    lines.append("记得在交易时间（9:30-15:00）内顶格申购。")
-    lines.append("可转债申购无需市值，顶格申购中签概率最大，中签后缴款即可。")
-    now_str = now_china().strftime("%Y-%m-%d %H:%M")
-    lines.append("")
-    lines.append(f"数据来源：东方财富（AKShare）| {now_str}")
+    微信里 Markdown 表格在窄屏上会被挤成一团，改用逐只卡片式排版，
+    单只信息竖排，一眼看清名称、代码、规模、评级。
+    """
+    count = len(today_issues)
+    lines = [f"## 📢 今日 {count} 只可转债可申购", ""]
 
-    title = "可转债申购提醒"
+    for idx, item in enumerate(today_issues):
+        name = safe_markdown_cell(item["onl_name"])
+        code = safe_markdown_cell(item["onl_code"])
+        size = safe_markdown_cell(format_size(item["issue_size"]))
+        rating = safe_markdown_cell(item.get("credit_rating") or "—")
+
+        lines.append(f"**{name}**")
+        lines.append(f"- 申购代码：`{code}`")
+        lines.append(f"- 发行规模：{size}")
+        lines.append(f"- 信用评级：{rating}")
+        # 多只之间用分隔线断开，避免视觉粘连；最后一只不加
+        if idx < count - 1:
+            lines.append("")
+            lines.append("---")
+        lines.append("")
+
+    lines.append("> ⏰ 交易时段 9:30–15:00 顶格申购")
+    lines.append(">")
+    lines.append("> 💡 无需持仓市值，顶格中签概率最高，中签后缴款即可")
+    lines.append("")
+    now_str = now_china().strftime("%m-%d %H:%M")
+    lines.append(f"数据来源：东方财富 · {now_str}")
+
+    title = f"可转债申购提醒（{count} 只）"
     return title, "\n".join(lines)
 
 
