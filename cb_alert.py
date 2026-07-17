@@ -14,7 +14,7 @@ import time
 import urllib.error
 import urllib.request
 from datetime import datetime
-from html import unescape
+from html import escape, unescape
 from zoneinfo import ZoneInfo
 
 # Windows 控制台/重定向输出可能是 GBK 编码，消息里的 emoji 会导致 UnicodeEncodeError
@@ -25,7 +25,7 @@ for _stream in (sys.stdout, sys.stderr):
 # ============ 配置区 ============
 PUSHPLUS_TOKEN = os.environ.get("PUSHPLUS_TOKEN")
 PUSHPLUS_URL = "https://www.pushplus.plus/send"
-PUSHPLUS_TEMPLATE = "markdown"
+PUSHPLUS_TEMPLATE = "html"
 CHINA_TZ = ZoneInfo("Asia/Shanghai")
 DATA_RETRY_COUNT = 3
 DATA_RETRY_BASE_DELAY = 3
@@ -53,11 +53,11 @@ def now_china():
     return datetime.now(CHINA_TZ)
 
 
-def safe_markdown_cell(value):
-    """清理 Markdown 表格单元格，避免接口数据破坏表格结构。"""
+def safe_html(value):
+    """转义 HTML 特殊字符，避免接口异常数据破坏推送排版。"""
     if value is None:
         return ""
-    return str(value).replace("|", "\\|").replace("\r", " ").replace("\n", " ").strip()
+    return escape(str(value), quote=True)
 
 
 def summarize_response_body(body, limit=300):
@@ -223,57 +223,48 @@ def format_size(size_in_yi):
 
 
 def build_message(today_issues):
-    """构建 Markdown 格式推送消息（当天可申购）。
+    """构建 HTML 格式推送消息（当天可申购）。"""
+    html = []
 
-    微信里 Markdown 表格在窄屏上会被挤成一团，改用逐只卡片式排版，
-    单只信息竖排，一眼看清名称、代码、规模、评级。
-    """
-    count = len(today_issues)
-    lines = [f"## 📢 今日 {count} 只可转债可申购", ""]
+    # ---- 今日申购 ----
+    html.append('<table style="width:100%;border-collapse:collapse;font-size:14px;border:1px solid #f0c4c9;">')
+    html.append('<tr style="background:#f8d7da;"><th style="padding:8px;border:1px solid #f0c4c9;">转债名称</th><th style="padding:8px;border:1px solid #f0c4c9;">申购代码</th><th style="padding:8px;border:1px solid #f0c4c9;">发行规模</th><th style="padding:8px;border:1px solid #f0c4c9;">信用评级</th></tr>')
+    for i, item in enumerate(today_issues):
+        bg = "#fff5f5" if i % 2 == 0 else "#ffffff"
+        rating = item.get("credit_rating") or "-"
+        html.append(f'<tr style="background:{bg};">')
+        html.append(f'<td style="text-align:center;padding:6px;border:1px solid #f0c4c9;font-weight:bold;">{safe_html(item["onl_name"])}</td>')
+        html.append(f'<td style="text-align:center;padding:6px;border:1px solid #f0c4c9;">{safe_html(item["onl_code"])}</td>')
+        html.append(f'<td style="text-align:center;padding:6px;border:1px solid #f0c4c9;">{safe_html(format_size(item["issue_size"]))}</td>')
+        html.append(f'<td style="text-align:center;padding:6px;border:1px solid #f0c4c9;">{safe_html(rating)}</td>')
+        html.append("</tr>")
+    html.append("</table>")
+    html.append('<p style="color:#e74c3c;font-size:13px;font-weight:bold;">⏰ 记得在交易时间（9:30-15:00）内顶格申购！</p>')
 
-    for idx, item in enumerate(today_issues):
-        name = safe_markdown_cell(item["onl_name"])
-        code = safe_markdown_cell(item["onl_code"])
-        size = safe_markdown_cell(format_size(item["issue_size"]))
-        rating = safe_markdown_cell(item.get("credit_rating") or "—")
+    # ---- 底部提示 ----
+    html.append('<p style="color:#666;font-size:12px;margin-top:12px;">💡 可转债申购无需市值，顶格申购中签概率最大，中签后缴款即可。</p>')
+    now_str = now_china().strftime("%Y-%m-%d %H:%M")
+    html.append(f'<p style="color:#aaa;font-size:11px;">数据来源：东方财富（AKShare）| {now_str}</p>')
 
-        lines.append(f"**{name}**")
-        lines.append(f"- 申购代码：`{code}`")
-        lines.append(f"- 发行规模：{size}")
-        lines.append(f"- 信用评级：{rating}")
-        # 多只之间用分隔线断开，避免视觉粘连；最后一只不加
-        if idx < count - 1:
-            lines.append("")
-            lines.append("---")
-        lines.append("")
-
-    lines.append("> ⏰ 交易时段 9:30–15:00 顶格申购")
-    lines.append(">")
-    lines.append("> 💡 无需持仓市值，顶格中签概率最高，中签后缴款即可")
-    lines.append("")
-    now_str = now_china().strftime("%m-%d %H:%M")
-    lines.append(f"数据来源：东方财富 · {now_str}")
-
-    title = f"可转债申购提醒（{count} 只）"
-    return title, "\n".join(lines)
+    title = "🔔 可转债申购提醒"
+    return title, "\n".join(html)
 
 
 def build_error_message(error_detail):
-    """构建接口异常告警 Markdown 消息。"""
-    safe_detail = compact_error_detail(error_detail)
-    lines = [
-        "## 可转债数据获取异常",
-        "",
-        "脚本在获取可转债申购数据时出错，请及时检查。",
-        "",
-        f"- 错误信息：{safe_detail}",
-        f"- 发生时间：{now_china().strftime('%Y-%m-%d %H:%M:%S')}",
-        "- 数据源：AKShare（东方财富 bond_zh_cov）",
-        "",
-        "可能原因：AKShare 版本过旧、东方财富接口变动、网络问题。",
-        "建议：检查 GitHub Actions 运行日志，或在本地执行 `pip install --upgrade akshare`。",
-    ]
-    return "可转债提醒脚本异常", "\n".join(lines)
+    """构建接口异常告警 HTML 消息。"""
+    safe_detail = safe_html(compact_error_detail(error_detail))
+    html = []
+    html.append('<h2 style="color:#e67e22;">⚠️ 可转债数据获取异常</h2>')
+    html.append('<p style="color:#333;font-size:14px;">脚本在获取可转债申购数据时出错，请及时检查！</p>')
+    html.append('<table style="width:100%;border-collapse:collapse;font-size:13px;">')
+    html.append('<tr style="background:#fdebd0;"><th style="padding:8px;text-align:left;">项目</th><th style="padding:8px;text-align:left;">详情</th></tr>')
+    html.append(f'<tr><td style="padding:6px;font-weight:bold;">错误信息</td><td style="padding:6px;">{safe_detail}</td></tr>')
+    html.append(f'<tr><td style="padding:6px;font-weight:bold;">发生时间</td><td style="padding:6px;">{now_china().strftime("%Y-%m-%d %H:%M:%S")}</td></tr>')
+    html.append('<tr><td style="padding:6px;font-weight:bold;">数据源</td><td style="padding:6px;">AKShare（东方财富 bond_zh_cov）</td></tr>')
+    html.append('</table>')
+    html.append('<p style="color:#666;font-size:12px;">可能原因：AKShare 版本过旧、东方财富接口变动、网络问题。</p>')
+    html.append('<p style="color:#666;font-size:12px;">建议：检查 GitHub Actions 运行日志，或在本地执行 <code>pip install --upgrade akshare</code>。</p>')
+    return "⚠️ 可转债提醒脚本异常", "\n".join(html)
 
 
 def send_pushplus(title, content, max_retries=2):
